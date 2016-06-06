@@ -1,8 +1,6 @@
 // Process @[youtube](youtubeVideoID)
 // Process @[vimeo](vimeoVideoID)
 // Process @[vine](vineVideoID)
-// Process @[prezi](preziID)
-
 
 'use strict';
 
@@ -26,23 +24,23 @@ function vine_parser (url) {
   return match && match[1].length === 11 ? match[1] : url;
 }
 
-var prezi_regex = /^https:\/\/prezi.com\/(.[^/]+)/;
-function prezi_parser(url) {
-  var match = url.match(prezi_regex);
-  return match ? match[1] : url;
-}
-
 var EMBED_REGEX = /@\[([a-zA-Z].+)\]\([\s]*(.*?)[\s]*[\)]/im;
 
 function video_embed(md, options) {
-  function video_return(state, silent) {
+
+  function video_return(state, startLine, endLine, silent) {
     var serviceEnd,
       serviceStart,
-      token,
-      oldPos = state.pos;
+      token;
 
-    if (state.src.charCodeAt(oldPos) !== 0x40/* @ */ ||
-        state.src.charCodeAt(oldPos + 1) !== 0x5B/* [ */) {
+    let pos = state.bMarks[startLine] + state.tShift[startLine];
+    let max = state.eMarks[startLine];
+    let marker = state.src.charCodeAt(pos);
+    let nextMarker = state.src.charCodeAt(pos+1);
+
+
+    if (marker !== 0x40/* @ */ ||
+        nextMarker !== 0x5B/* [ */) {
       return false;
     }
 
@@ -62,8 +60,6 @@ function video_embed(md, options) {
       videoID = vimeo_parser(videoID);
     } else if (serviceLower === 'vine') {
       videoID = vine_parser(videoID);
-    } else if (serviceLower === 'prezi') {
-      videoID = prezi_parser(videoID);
     } else if (!options[serviceLower]) {
       return false;
     }
@@ -73,19 +69,16 @@ function video_embed(md, options) {
       videoID = '';
     }
 
-    serviceStart = oldPos + 2;
-    serviceEnd = md.helpers.parseLinkLabel(state, oldPos + 1, false);
-
     //
     // We found the end of the link, and know for a fact it's a valid link;
     // so all that's left to do is to call tokenizer.
     //
     if (!silent) {
-      state.pos = serviceStart;
-      state.posMax = serviceEnd;
+      // state.pos = serviceStart;
+      // state.posMax = serviceEnd;
       state.service = state.src.slice(serviceStart, serviceEnd);
-      var newState = new state.md.inline.State(service, state.md, state.env, []);
-      newState.md.inline.tokenize(newState);
+      var newState = new state.md.block.State(service, state.md, state.env, []);
+      newState.md.block.tokenize(newState);
 
       token = state.push('video', '');
       token.videoID = videoID;
@@ -93,8 +86,9 @@ function video_embed(md, options) {
       token.level = state.level;
     }
 
-    state.pos = state.pos + state.src.indexOf(')', state.pos);
-    state.posMax = state.tokens.length;
+    // state.pos = state.pos + state.src.indexOf(')', state.pos);
+    // state.posMax = state.tokens.length;
+    state.line = startLine + 1;
     return true;
   }
 
@@ -109,11 +103,6 @@ function video_url(service, videoID, options) {
       return '//player.vimeo.com/video/' + videoID;
     case 'vine':
       return '//vine.co/v/' + videoID + '/embed/' + options.vine.embed;
-    case 'prezi':
-      return 'https://prezi.com/embed/' + videoID +
-      '/?bgcolor=ffffff&amp;lock_to_path=0&amp;autoplay=0&amp;autohide_ctrls=0&amp;' +
-      'landing_data=bHVZZmNaNDBIWnNjdEVENDRhZDFNZGNIUE43MHdLNWpsdFJLb2ZHanI5N1lQVHkxSHFxazZ0UUNCRHloSXZROHh3PT0&amp;' +
-      'landing_sign=1kD6c0N6aYpMUS0wxnQjxzSqZlEB8qNFdxtdjYhwSuI';
   }
 }
 
@@ -122,7 +111,7 @@ function tokenize_video(md, options) {
     var videoID = md.utils.escapeHtml(tokens[idx].videoID);
     var service = md.utils.escapeHtml(tokens[idx].service).toLowerCase();
     return videoID === '' ? '' :
-      '<div class="embed-responsive embed-responsive-16by9"><iframe class="embed-responsive-item" id="' +
+      '<div class="embed-responsive"><iframe class="embed-responsive-item embed-responsive-16by9" id="' +
       service + 'player" type="text/html" width="' + (options[service].width) +
       '" height="' + (options[service].height) +
       '" src="' + options.url(service, videoID, options) +
@@ -136,8 +125,7 @@ var defaults = {
   url: video_url,
   youtube: { width: 640, height: 390 },
   vimeo: { width: 500, height: 281 },
-  vine: { width: 600, height: 600, embed: 'simple' },
-  prezi: { width: 550, height: 400 }
+  vine: { width: 600, height: 600, embed: 'simple' }
 };
 
 module.exports = function video_plugin(md, options) {
@@ -151,5 +139,5 @@ module.exports = function video_plugin(md, options) {
     options = defaults;
   }
   md.renderer.rules.video = tokenize_video(md, options);
-  md.inline.ruler.before('emphasis', 'video', video_embed(md, options));
+  md.block.ruler.before('paragraph', 'video', video_embed(md, options));
 };
